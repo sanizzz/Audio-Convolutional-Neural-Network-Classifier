@@ -1,12 +1,13 @@
-# using modal for training and inference 
+﻿# using modal for training and inference 
 import modal
-from torch.utils.data import Dataset
-import pathlib as Path
+from torch.utils.data import Dataset,DataLoader
+from pathlib import Path
 import pandas as pd
 import torchaudio
 import torch
 import torch.nn as nn
-import torchaudio.transforms as t
+import torchaudio.transforms as T
+import sys
 
 app = modal.App("audio-CNN")
 
@@ -32,7 +33,7 @@ class ESC50Dataset(Dataset):
     def __init__(self,data_dir,metadata_file,split="train",transform=None):
         super().__init__()
         self.data_dir = Path(data_dir)
-        self.metadata_file = pd.read_csv(metadata_file)
+        self.metadata = pd.read_csv(metadata_file) # error fixed used self.metadata_file instead of meta data
         self.split = split
         self.transform = transform
 
@@ -69,8 +70,33 @@ class ESC50Dataset(Dataset):
 @app.function(image=image,gpu="A10G",volumes={"/data":data_volume,"/models":model_volume},timeout= 60 * 60 * 3)
 def train():
     esc50_dir = Path("/opt/esc50-data")
-    train_transform = 
+    train_transform = nn.Sequential(
+        T.MelSpectrogram(
+            sample_rate=22050,
+            n_fft=1024,
+            hop_length=512,
+            n_mels=128,
+            f_min=0,
+            f_max=11025
+        ),
+        T.AmplitudeToDB(),
+        T.FrequencyMasking(freq_mask_param=30),
+        T.TimeMasking(time_mask_param=80)
+    )
     
+    train_dataset = ESC50Dataset(data_dir=esc50_dir,metadata_file=esc50_dir / "meta" / "esc50.csv",split="train", transform=train_transform)
+    val_dataset = ESC50Dataset(data_dir=esc50_dir,metadata_file=esc50_dir / "meta" / "esc50.csv",split="val", transform=train_transform)
+
+    # checking the training and validation data set
+    print(f"Training samples: {len(train_dataset)}")
+    print(f"Validation samples: {len(val_dataset)}")
+
+    # load data in batches to train nn
+    train_dataloader = DataLoader(train_dataset,batch_size=32,shuffle=True)
+    val_loader = DataLoader(val_dataset,batch_size=32,shuffle=False)
+
+    device = torch.device('cuda' id torch.)
+
 
 
 @app.local_entrypoint()
