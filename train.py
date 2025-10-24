@@ -8,6 +8,9 @@ import torch
 import torch.nn as nn
 import torchaudio.transforms as T
 import sys
+from model import AudioCNN
+import torch.optim  as optim
+from torch.optim.lr_scheduler import OneCycleLR
 
 app = modal.App("audio-CNN")
 
@@ -95,8 +98,15 @@ def train():
     train_dataloader = DataLoader(train_dataset,batch_size=32,shuffle=True)
     val_loader = DataLoader(val_dataset,batch_size=32,shuffle=False)
 
-    device = torch.device('cuda' id torch.)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = AudioCNN(num_classes=len(train_dataset.classes))
+    model.to(device)
 
+    num_epochs = 100
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1) # label smoothing helps model to be more humble in its predictions 
+    optimizer = optim.AdamW(model.parameters(),lr=0.005,weight_decay=0.001)
+    
+    scheduler = One
 
 
 @app.local_entrypoint()
