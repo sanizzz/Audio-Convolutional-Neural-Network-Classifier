@@ -6,7 +6,7 @@ class ResidualBlock(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels,out_channels,3,stride,padding=1,bias=False) #bias false to save computing as batchnorm has it 
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels,out_channels,3,stride,padding=1,bias=False)
+        self.conv2 = nn.Conv2d(out_channels,out_channels,3,padding=1,bias=False)
         self.bn2 = self.bn1 = nn.BatchNorm2d(out_channels)
 
         self.shortcut = nn.Sequential()
@@ -19,7 +19,7 @@ class ResidualBlock(nn.Module):
         out = self.conv1(x)
         out = self.bn1(out)
         out = torch.relu(out)
-        out = self.conv2(x)
+        out = self.conv2(out)
         out = self.bn2(out) 
         shortcut = self.shortcut(x) if self.use_shortcut else x
         out_add = out + shortcut
@@ -33,9 +33,9 @@ class AudioCNN(nn.Module):
         self.conv1 = nn.Sequential(nn.Conv2d(1,64,kernel_size=7,stride=2,padding=3,bias=False),nn.BatchNorm2d(64),nn.ReLU(inplace=True),nn.MaxPool2d(3,stride=2,padding=1)) #first layer 
 
         self.layer1 = nn.ModuleList([ResidualBlock(64,64) for _ in range(3)]) # second layer with 3 residual blocks
-        self.layer2 = nn.ModuleList([ResidualBlock(64 if i == 0 else 128,128) for i in range(4)])
-        self.layer3 = nn.ModuleList([ResidualBlock(128 if i == 0 else 256,256) for i in range(6)])
-        self.layer4 = nn.ModuleList([ResidualBlock(256 if i == 0 else 512,512) for i in range(3)])
+        self.layer2 = nn.ModuleList([ResidualBlock(64 if i == 0 else 128,128,stride=2 if i == 0 else 1) for i in range(4)])
+        self.layer3 = nn.ModuleList([ResidualBlock(128 if i == 0 else 256,256,stride=2 if i == 0 else 1) for i in range(6)])
+        self.layer4 = nn.ModuleList([ResidualBlock(256 if i == 0 else 512,512,stride=2 if i == 0 else 1) for i in range(3)])
 
         self.avgpool = nn.AdaptiveAvgPool2d((1,1)) # to reduce the 4 x 8 feature map from the 4th layer to 1 x 1
         self.dropout = nn.Dropout(0.5)
