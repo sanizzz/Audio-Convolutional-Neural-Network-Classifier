@@ -11,3 +11,4 @@ librosa
 pydantic
 soundfile
 requests
+python-multipart

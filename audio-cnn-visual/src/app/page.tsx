@@ -115,8 +115,7 @@ function splitLayers(visualization: VisualizationData): SplitLayersResult {
   return { main, internals };
 }
 
-const INFERENCE_BASE_URL = env.NEXT_PUBLIC_INFERENCE_URL.replace(/\/$/, "");
-const PREDICT_URL = `${INFERENCE_BASE_URL}/api/predict`;
+const INFERENCE_URL = env.NEXT_PUBLIC_INFERENCE_URL;
 
 export default function HomePage() {
   const [vizData, setVizData] = useState<ApiResponse | null>(null);
@@ -139,7 +138,7 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(PREDICT_URL, {
+      const response = await fetch(INFERENCE_URL, {
         method: "POST",
         body: formData,
       });

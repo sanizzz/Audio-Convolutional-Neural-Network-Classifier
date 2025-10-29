@@ -6,6 +6,8 @@ import requests
 import torch.nn as nn
 import torchaudio.transforms as T
 import torch
+from fastapi import File, HTTPException, Request, UploadFile, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import soundfile as sf
 import librosa
@@ -71,8 +73,32 @@ class AudioClassifier:
         print("Model loaded on enter")
 
     @modal.fastapi_endpoint(method="POST")
-    def inference(self, request: InferenceRequest):
-        audio_bytes = base64.b64decode(request.audio_data)
+    async def inference(self, request: Request, file: UploadFile = File(default=None)):
+        audio_bytes = None
+
+        if file is not None:
+            try:
+                audio_bytes = await file.read()
+            except Exception as exc:  # pragma: no cover - FastAPI handles response
+                raise HTTPException(
+                    status_code=400, detail="Failed to read uploaded file."
+                ) from exc
+        else:
+            try:
+                payload = await request.json()
+            except Exception:
+                payload = {}
+            audio_b64 = payload.get("audio_data")
+            if audio_b64:
+                try:
+                    audio_bytes = base64.b64decode(audio_b64)
+                except Exception as exc:  # pragma: no cover
+                    raise HTTPException(
+                        status_code=400, detail="Invalid base64 audio data."
+                    ) from exc
+
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="No audio data provided.")
 
         audio_data, sample_rate = sf.read(
             io.BytesIO(audio_bytes), dtype="float32")
@@ -135,7 +161,25 @@ class AudioClassifier:
             }
         }
 
-        return response
+        return JSONResponse(
+            content=response,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            }
+        )
+
+    @modal.fastapi_endpoint(method="OPTIONS")
+    async def inference_options(self):
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            }
+        )
 
 
 @app.local_entrypoint()
@@ -144,12 +188,12 @@ def main():
 
     buffer = io.BytesIO()
     sf.write(buffer, audio_data, sample_rate, format="WAV")
-    audio_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    payload = {"audio_data": audio_b64}
+    buffer.seek(0)
 
     server = AudioClassifier()
     url = server.inference.get_web_url()
-    response = requests.post(url, json=payload)
+    files = {"file": ("chirpingbirds.wav", buffer, "audio/wav")}
+    response = requests.post(url, files=files)
     response.raise_for_status()
 
     result = response.json()
@@ -158,8 +202,11 @@ def main():
     if waveform_info:
         values = waveform_info.get("values", {})
         print(f"First 10 values: {[round(v, 4) for v in values[:10]]}...")
-        print(f"Duration: {waveform_info.get("duration", 0)}")
+        duration = waveform_info.get("duration", 0)
+        print(f"Duration: {duration}")
 
     print("Top predictions:")
     for pred in result.get("predictions", []):
-        print(f"  -{pred["class"]} {pred["confidence"]:0.2%}")
+        class_name = pred["class"]
+        confidence = pred["confidence"]
+        print(f"  -{class_name} {confidence:0.2%}")
