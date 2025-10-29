@@ -1,4 +1,3 @@
-import base64
 import io
 from pathlib import Path
 
@@ -8,10 +7,9 @@ import requests
 import torch.nn as nn
 import torchaudio.transforms as T
 import torch
-from pydantic import BaseModel
 import soundfile as sf
 import librosa
-from fastapi import Response
+from fastapi import File, HTTPException, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from model import AudioCNN
@@ -24,6 +22,12 @@ image = (modal.Image.debian_slim()
          .add_local_python_source("model"))
 
 model_volume = modal.Volume.from_name("esc-model")
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+}
 
 
 class AudioProcessor:
@@ -50,10 +54,6 @@ class AudioProcessor:
         return spectrogram.unsqueeze(0)
 
 
-class InferenceRequest(BaseModel):
-    audio_data: str
-
-
 @app.cls(image=image, gpu="A10G", volumes={"/models": model_volume}, scaledown_window=15)
 class AudioClassifier:
     @modal.enter()
@@ -74,33 +74,70 @@ class AudioClassifier:
         self.audio_processor = AudioProcessor()
         print("Model loaded on enter")
 
-    @modal.fastapi_endpoint(method="POST")
-    def inference(self, request: InferenceRequest):
-        audio_bytes = base64.b64decode(request.audio_data)
+    @modal.fastapi_endpoint(route="/api/predict", method="POST")
+    async def inference(self, file: UploadFile = File(...)):
+        if file is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No file uploaded.",
+            )
 
-        audio_data, sample_rate = sf.read(
-            io.BytesIO(audio_bytes), dtype="float32")
+        try:
+            audio_bytes = await file.read()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to read uploaded file.",
+            ) from exc
+
+        if not audio_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file is empty.",
+            )
+
+        try:
+            audio_data, sample_rate = sf.read(
+                io.BytesIO(audio_bytes), dtype="float32"
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported or corrupt audio file.",
+            ) from exc
 
         if audio_data.ndim > 1:
             audio_data = np.mean(audio_data, axis=1)
 
         if sample_rate != 44100:
-            audio_data = librosa.resample(
-                y=audio_data, orig_sr=sample_rate, target_sr=44100)
+            try:
+                audio_data = librosa.resample(
+                    y=audio_data, orig_sr=sample_rate, target_sr=44100
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to resample audio.",
+                ) from exc
+            sample_rate = 44100
 
-        spectrogram = self.audio_processor.process_audio_chunk(audio_data)
-        spectrogram = spectrogram.to(self.device)
+        try:
+            spectrogram = self.audio_processor.process_audio_chunk(audio_data)
+            spectrogram = spectrogram.to(self.device)
 
-        with torch.no_grad():
-            output, feature_maps = self.model(
-                spectrogram, return_feature_maps=True)
+            with torch.no_grad():
+                output, feature_maps = self.model(
+                    spectrogram, return_feature_maps=True
+                )
 
             output = torch.nan_to_num(output)
             probabilities = torch.softmax(output, dim=1)
-            top3_probs, top3_indicies = torch.topk(probabilities[0], 3)
+            top3_probs, top3_indices = torch.topk(probabilities[0], 3)
 
-            predictions = [{"class": self.classes[idx.item()], "confidence": prob.item()}
-                           for prob, idx in zip(top3_probs, top3_indicies)]
+            predictions = [
+                {"class": self.classes[idx.item()], "confidence": prob.item()}
+                for prob, idx in zip(top3_probs, top3_indices)
+            ]
 
             viz_data = {}
             for name, tensor in feature_maps.items():
@@ -111,7 +148,7 @@ class AudioClassifier:
                     clean_array = np.nan_to_num(numpy_array)
                     viz_data[name] = {
                         "shape": list(clean_array.shape),
-                        "values": clean_array.tolist()
+                        "values": clean_array.tolist(),
                     }
 
             spectrogram_np = spectrogram.squeeze(0).squeeze(0).cpu().numpy()
@@ -125,54 +162,70 @@ class AudioClassifier:
             else:
                 waveform_data = audio_data
 
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Model inference failed.",
+            ) from exc
+
         response = {
             "predictions": predictions,
             "visualization": viz_data,
             "input_spectrogram": {
                 "shape": list(clean_spectrogram.shape),
-                "values": clean_spectrogram.tolist()
+                "values": clean_spectrogram.tolist(),
             },
             "waveform": {
                 "values": waveform_data.tolist(),
                 "sample_rate": waveform_sample_rate,
-                "duration": len(audio_data) / waveform_sample_rate
-            }
+                "duration": len(audio_data) / waveform_sample_rate,
+            },
         }
 
         return JSONResponse(
             content=response,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
+            headers=CORS_HEADERS,
         )
 
-    @modal.fastapi_endpoint(method="OPTIONS")
-    def options(self):
+    @modal.fastapi_endpoint(route="/api/predict", method="OPTIONS")
+    async def options(self):
         return Response(
             status_code=204,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
+            headers=CORS_HEADERS,
         )
 
 
 @app.local_entrypoint()
-def main():
-    audio_data, sample_rate = sf.read("chirpingbirds.wav")
+def main(file_path: str = "chirpingbirds.wav"):
+    audio_path = Path(file_path)
+    if not audio_path.exists():
+        raise FileNotFoundError(
+            f"Sample file not found at {audio_path.resolve()}. "
+            "Pass --file-path <path-to-wav> when running `modal run main.py`."
+        )
 
-    buffer = io.BytesIO()
-    sf.write(buffer, audio_data, sample_rate, format="WAV")
-    audio_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    payload = {"audio_data": audio_b64}
+    audio_data, sample_rate = sf.read(audio_path)
 
     server = AudioClassifier()
     url = server.inference.get_web_url()
-    response = requests.post(url, json=payload)
-    response.raise_for_status()
+
+    buffer = io.BytesIO()
+    sf.write(buffer, audio_data, sample_rate, format="WAV")
+    buffer.seek(0)
+
+    files = {"file": ("sample.wav", buffer, "audio/wav")}
+    response = requests.post(url, files=files, timeout=60)
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        detail = None
+        try:
+            detail = response.json().get("detail")
+        except Exception:
+            detail = response.text
+        raise RuntimeError(f"Request failed: {detail}") from exc
 
     result = response.json()
 

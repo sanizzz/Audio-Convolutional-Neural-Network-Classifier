@@ -134,43 +134,34 @@ export default function HomePage() {
     setError(null);
     setVizData(null);
 
-    const reader = new FileReader();
-    reader.readAsArrayBuffer(file);
-    reader.onload = async () => {
-      try {
-        const arrayBuffer = reader.result as ArrayBuffer;
-        const base64String = btoa(
-          new Uint8Array(arrayBuffer).reduce(
-            (data, byte) => data + String.fromCharCode(byte),
-            "",
-          ),
-        );
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-        const response = await fetch(INFERENCE_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ audio_data: base64String }),
-        });
+      const response = await fetch(INFERENCE_URL, {
+        method: "POST",
+        body: formData,
+      });
 
-        if (!response.ok) {
-          throw new Error(`API error ${response.statusText}`);
-        }
-
-        const rawData = (await response.json()) as unknown;
-        const parsedData = rawData as ApiResponse;
-        setVizData(parsedData);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "An unknown error occurred",
-        );
-      } finally {
-        setIsLoading(false);
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        const detail =
+          typeof errorBody?.detail === "string"
+            ? errorBody.detail
+            : response.statusText || "Request failed";
+        throw new Error(detail);
       }
-    };
-    reader.onerror = () => {
-      setError("Failed to read the file.");
+
+      const rawData = (await response.json()) as unknown;
+      const parsedData = rawData as ApiResponse;
+      setVizData(parsedData);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "An unknown error occurred";
+      setError(message);
+    } finally {
       setIsLoading(false);
-    };
+    }
   };
 
   const emptyLayers: SplitLayersResult = { main: [], internals: {} };
