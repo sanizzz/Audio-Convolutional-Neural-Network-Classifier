@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
 import Waveform from "~/components/Waveform";
+import { env } from "~/env";
 
 interface Prediction {
   class: string;
@@ -114,6 +115,8 @@ function splitLayers(visualization: VisualizationData): SplitLayersResult {
   return { main, internals };
 }
 
+const INFERENCE_URL = env.NEXT_PUBLIC_INFERENCE_URL;
+
 export default function HomePage() {
   const [vizData, setVizData] = useState<ApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -143,7 +146,7 @@ export default function HomePage() {
           ),
         );
 
-        const response = await fetch("inference_url_here", {
+        const response = await fetch(INFERENCE_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audio_data: base64String }),
