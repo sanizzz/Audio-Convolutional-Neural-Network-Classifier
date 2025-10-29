@@ -1,5 +1,7 @@
 import base64
 import io
+from pathlib import Path
+
 import modal
 import numpy as np
 import requests
