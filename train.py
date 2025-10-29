@@ -107,9 +107,21 @@ def train():
         T.FrequencyMasking(freq_mask_param=30),
         T.TimeMasking(time_mask_param=80)
     )
+
+    val_transform = nn.Sequential(
+        T.MelSpectrogram(
+            sample_rate=22050,
+            n_fft=1024,
+            hop_length=512,
+            n_mels=128,
+            f_min=0,
+            f_max=11025
+        ),
+        T.AmplitudeToDB(),
+    )
     
     train_dataset = ESC50Dataset(data_dir=esc50_dir,metadata_file=esc50_dir / "meta" / "esc50.csv",split="train", transform=train_transform)
-    val_dataset = ESC50Dataset(data_dir=esc50_dir,metadata_file=esc50_dir / "meta" / "esc50.csv",split="test", transform=train_transform)
+    val_dataset = ESC50Dataset(data_dir=esc50_dir,metadata_file=esc50_dir / "meta" / "esc50.csv",split="test", transform=val_transform)
 
     # checking the training and validation data set
     print(f"Training samples: {len(train_dataset)}")

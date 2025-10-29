@@ -6,3 +6,8 @@ tqdm
 numpy
 datetime
 tensorboard
+fastapi
+librosa
+pydantic
+soundfile
+requests
