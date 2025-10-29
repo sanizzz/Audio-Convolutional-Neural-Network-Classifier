@@ -144,11 +144,16 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        const detail =
-          typeof errorBody?.detail === "string"
-            ? errorBody.detail
-            : response.statusText || "Request failed";
+        const errorBody = (await response.json().catch(() => null)) as unknown;
+        let detail = response.statusText || "Request failed";
+
+        if (typeof errorBody === "object" && errorBody !== null) {
+          const maybeDetail = (errorBody as { detail?: unknown }).detail;
+          if (typeof maybeDetail === "string" && maybeDetail.trim().length > 0) {
+            detail = maybeDetail;
+          }
+        }
+
         throw new Error(detail);
       }
 
