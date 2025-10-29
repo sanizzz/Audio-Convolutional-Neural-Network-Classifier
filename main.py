@@ -9,6 +9,8 @@ import torch
 from pydantic import BaseModel
 import soundfile as sf
 import librosa
+from fastapi import Response
+from fastapi.responses import JSONResponse
 
 from model import AudioCNN
 
@@ -135,7 +137,25 @@ class AudioClassifier:
             }
         }
 
-        return response
+        return JSONResponse(
+            content=response,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        )
+
+    @modal.fastapi_endpoint(method="OPTIONS")
+    def options(self):
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        )
 
 
 @app.local_entrypoint()
@@ -158,8 +178,8 @@ def main():
     if waveform_info:
         values = waveform_info.get("values", {})
         print(f"First 10 values: {[round(v, 4) for v in values[:10]]}...")
-        print(f"Duration: {waveform_info.get("duration", 0)}")
+        print(f'Duration: {waveform_info.get("duration", 0)}')
 
     print("Top predictions:")
     for pred in result.get("predictions", []):
-        print(f"  -{pred["class"]} {pred["confidence"]:0.2%}")
+        print(f'  -{pred["class"]} {pred["confidence"]:0.2%}')
