@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 
 
+# we use relu - rectified linear unit as it reduces the diminishing of model weights due to gradient decent during back prop and also use resnet
+#residual blocks for the architecture and reduces the effect of calculating gradient of loss functions  so the earlier layers can be still be learning
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super().__init__()
