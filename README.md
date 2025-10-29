@@ -1,4 +1,4 @@
-# Audio CNN Classifier
+# Audio CNN Classifier -  https://audio-convolutional-neural-network-snowy.vercel.app/
 
 End-to-end audio understanding system that trains a residual convolutional neural network on ESC-50, serves a FastAPI inference endpoint on Modal, and visualizes predictions plus feature maps in a Next.js dashboard.
 
@@ -141,7 +141,7 @@ Response (trimmed):
    npm run dev
    ```
 
-3. Visit http://localhost:3000, upload a WAV file (long clips are downsampled to about 8,000 samples for plotting), and explore predictions plus intermediate activations.
+3. Visit https://audio-convolutional-neural-network-snowy.vercel.app/,  To  see the demo add upload a WAV file , you dwonload a clip from this github-(https://github.com/karolpiczak/ESC-50), and explore predictions plus intermediate activations.
 
 ### Useful Assets
 
