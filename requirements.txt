@@ -1,0 +1,14 @@
+pandas
+torchaudio
+torchcodec
+torch
+tqdm
+numpy
+datetime
+tensorboard
+fastapi
+librosa
+pydantic
+soundfile
+requests
+python-multipart
